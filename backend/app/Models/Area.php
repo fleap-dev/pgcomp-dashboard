@@ -17,11 +17,10 @@ use Illuminate\Validation\Rule;
  * App\Models\Area
  *
  * @property int $id
- * @property string $area_name
- * @property int $program_id
+ * @property string $area
+ * @property string $subarea
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read Program $program
  * @method static Builder|Area newModelQuery()
  * @method static Builder|Area newQuery()
  * @method static Builder|Area query()
@@ -37,8 +36,8 @@ class Area extends BaseModel
     use HasFactory;
 
     protected $fillable = [
-        'area_name',
-        'program_id',
+        'area',
+        'subarea',
     ];
 
     /**
@@ -47,48 +46,9 @@ class Area extends BaseModel
     public static function creationRules(): array
     {
         return [
-            'area_name' => 'required|string|max:255',
-            'program_id' => [
-                'nullable',
-                'int',
-                Rule::exists(Program::class, 'id'),
-                'required',
-            ],
+            'area' => 'required|string|max:255',
+            'subarea' => 'required|string|max:255',
         ];
-    }
-
-    /**
-     * Create or update an area in the database
-     *
-     * @param array array counting the model area fields
-     * @return \App\Models\Area an instance of the area model
-     */
-    public static function createOrUpdateArea(array $data): Area
-    {
-        return Area::updateOrCreate(
-            Arr::only($data, ['area_name']),
-            $data
-        );
-    }
-
-    /**
-     * Establishes a relationship of belonging with the program model
-     *
-     * @return BelongsTo Relation of belonging area -> program
-     */
-    public function program(): BelongsTo
-    {
-        return $this->belongsTo(Program::class, 'program_id');
-    }
-
-    /**
-     * Establish a has-many relationship with the subarea model
-     *
-     * @return HasMany Relation that an area has more than one subarea
-     */
-    public function subarea(): HasMany
-    {
-        return $this->hasMany(Subarea::class, 'area_id', 'id');
     }
 
     /**
@@ -96,45 +56,24 @@ class Area extends BaseModel
      */
     public function updateRules(): array
     {
-        return [
-            'area_name' => 'required|string|max:255',
-            'program_id' => [
-                'nullable',
-                'int',
-                Rule::exists(Program::class, 'id'),
-                'required',
-            ],
-        ];
+        return self::creationRules();
     }
 
     /**
-     * Establish a relationship of, has-many-through, with the users model
-     *
-     * @return HasManyThrough An area has more than one user from a given subarea
+     * @return HasMany all users that belong to this area
      */
-    public function users(): HasManyThrough
+    public function users(): HasMany
     {
-        return $this->hasManyThrough(User::class, Subarea::class, 'area_id', 'subarea_id');
+        return $this->hasMany(User::class, 'area_id', 'id');
     }
 
     /**
-     * Establish a relationship of, has-many-through, with the users model with students type
-     *
-     * @return HasManyThrough An area has more than one user with students type from a given subarea
+     * @return HasMany all students that belong to this area
      */
-    public function students(): HasManyThrough
+    public function students(): HasMany
     {
-        return $this->hasManyThrough(User::class, Subarea::class, 'area_id', 'subarea_id')
+        return $this->users()
             ->where('type', UserType::STUDENT);
     }
 
-    /**
-     * Establish a relationship of, has-many-through, with the usersSubarea model and subarea
-     *
-     * @return HasManyThrough An area has more than one usersSubarea with  from a given subarea
-     */
-    public function usersInSubarea(){
-        return $this->hasManyThrough(UsersSubarea::class, Subarea::class,
-            'area_id', 'subareas_id');
-    }
 }

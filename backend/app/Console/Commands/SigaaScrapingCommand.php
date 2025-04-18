@@ -7,7 +7,6 @@ use App\Domain\Sigaa\StudentScraping;
 use App\Domain\Sigaa\TeacherScraping;
 use App\Enums\UserRelationType;
 use App\Enums\UserType;
-use App\Models\Program;
 use App\Models\User;
 use Exception;
 use Illuminate\Console\Command;
@@ -104,7 +103,7 @@ class SigaaScrapingCommand extends Command
                     $user->advisors()->sync($advisors);
                     $advisor = $user->advisors()->first();
                     if ($advisor) {
-                        $user->subarea_id = $advisor->subarea_id;
+                        $user->area_id = $advisor->area_id;
                         $user->save();
                     }
 
@@ -148,10 +147,8 @@ class SigaaScrapingCommand extends Command
     private function updateDefended(array $data)
     {
         foreach ($data as $item) {
-            $programId = Program::where('sigaa_id', $item['programId'])->first(['id'])->id;
             $user = User::where('type', UserType::STUDENT->value)
                 ->where('name', $item['student'])
-                ->where('program_id', $programId)
                 ->first();
 
             $teacher = User::where('type', UserType::PROFESSOR->value)
@@ -161,7 +158,7 @@ class SigaaScrapingCommand extends Command
             if ($user) {
                 $advisor = $user->advisors()->first();
                 if ($advisor) {
-                    $user->subarea_id = $advisor->subarea_id;
+                    $user->area_id = $advisor->area_id;
                 }
                 $user->defended_at = $item['date'];
                 $user->save();
@@ -176,8 +173,6 @@ class SigaaScrapingCommand extends Command
                     'registration' => $registration -1,
                     'name' => $item['student'],
                     'course_id' => $item['course_id'],
-                    'program_id' => $programId,
-                    'subarea_id' => $teacher?->subarea_id,
                 ]);
             }
             if ($teacher && $user->advisors()->where('id', $teacher->id)->doesntExist()) {

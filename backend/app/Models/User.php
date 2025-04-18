@@ -50,8 +50,7 @@ use Laravel\Sanctum\PersonalAccessToken;
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property bool $is_admin
- * @property int|null $subarea_id
- * @property int|null $program_id
+ * @property int|null $area_id
  * @property int|null $course_id
  * @property string|null $lattes_url
  * @property string|null $remember_token
@@ -64,7 +63,6 @@ use Laravel\Sanctum\PersonalAccessToken;
  * @property-read int|null $advisedes_count
  * @property-read Collection|User[] $advisors
  * @property-read int|null $advisors_count
- * @property-read Program|null $belongsToTheCourse
  * @property-read Collection|User[] $coadviseees
  * @property-read int|null $coadviseees_count
  * @property-read Collection|User[] $coadvisors
@@ -93,11 +91,10 @@ use Laravel\Sanctum\PersonalAccessToken;
  * @method static Builder|User whereLattesUrl($value)
  * @method static Builder|User whereName($value)
  * @method static Builder|User wherePassword($value)
- * @method static Builder|User whereProgramId($value)
  * @method static Builder|User whereRegistration($value)
  * @method static Builder|User whereRememberToken($value)
  * @method static Builder|User whereSiape($value)
- * @method static Builder|User whereSubareaId($value)
+ * @method static Builder|User whereAreaId($value)
  * @method static Builder|User whereTwoFactorRecoveryCodes($value)
  * @method static Builder|User whereTwoFactorSecret($value)
  * @method static Builder|User whereType($value)
@@ -114,11 +111,10 @@ class User extends BaseModel implements AuthenticatableContract, AuthorizableCon
         'siape',
         'name',
         'type',
-        'subarea_id',
+        'area_id',
         'email',
         'password',
         'course_id',
-        'program_id',
         'lattes_url',
     ];
 
@@ -152,10 +148,10 @@ class User extends BaseModel implements AuthenticatableContract, AuthorizableCon
             'siape' => 'nullable|int|required_if:type,' . UserType::PROFESSOR->value,
             'name' => 'required|string|max:255',
             'type' => ['required', new Enum(UserType::class)],
-            'subarea_id' => [
+            'area_id' => [
                 'nullable',
                 'int',
-                Rule::exists(Subarea::class, 'id')
+                Rule::exists(Area::class, 'id')
             ],
             'email' => [
                 'nullable',
@@ -171,12 +167,6 @@ class User extends BaseModel implements AuthenticatableContract, AuthorizableCon
                 Rule::exists(Course::class, 'id'),
                 'required_if:type,' . UserType::STUDENT->value,
             ],
-            'program_id' => [
-                'nullable',
-                'int',
-                Rule::exists(Program::class, 'id'),
-                'required',
-            ],
             'lattes_url' => 'nullable|string|max:255',
         ];
     }
@@ -191,6 +181,7 @@ class User extends BaseModel implements AuthenticatableContract, AuthorizableCon
     {
         $data['type'] = UserType::STUDENT->value;
         $password = Hash::make(Str::random(12));
+        // TODO: Will this override the password????
         $data['password'] = $password;
         $data['password_confirmation'] = $password;
 
@@ -210,6 +201,7 @@ class User extends BaseModel implements AuthenticatableContract, AuthorizableCon
     {
         $data['type'] = UserType::PROFESSOR->value;
         $password = Hash::make(Str::random(12));
+        // TODO: Will this override the password? Reuse?
         $data['password'] = $password;
         $data['password_confirmation'] = $password;
 
@@ -227,36 +219,6 @@ class User extends BaseModel implements AuthenticatableContract, AuthorizableCon
     public function writerOf(): BelongsToMany
     {
         return $this->belongsToMany(Production::class, 'users_productions', 'users_id', 'productions_id');
-    }
-
-    /**
-     * Establishes a relationship of belongsToMany with the subarea model
-     *
-     * @return BelongsToMany Relation of belongisToMany user -> subarea
-     */
-    public function subareas(): BelongsToMany
-    {
-        return $this->belongsToMany(Subarea::class, 'users_subareas', 'users_id', 'subareas_id');
-    }
-
-    /**
-     * Establishes a relationship of belongsTo with the subarea model
-     *
-     * @return BelongsTo Relation of belongisTo user -> subarea
-     */
-    public function subarea(): BelongsTo
-    {
-        return $this->belongsTo(Subarea::class, 'subarea_id');
-    }
-
-    /**
-     * Establishes a relationship of belongsTo with the program model
-     *
-     * @return BelongsTo Relation of belongisTo user -> sprogram
-     */
-    public function program(): BelongsTo
-    {
-        return $this->belongsTo(Program::class, 'program_id');
     }
 
     /**
@@ -307,17 +269,12 @@ class User extends BaseModel implements AuthenticatableContract, AuthorizableCon
 
         return [
             'name' => 'string|max:255',
-            'subarea_id' => [
+            'area_id' => [
                 'nullable',
                 'int',
-                Rule::exists(Subarea::class, 'id')
+                Rule::exists(Area::class, 'id')
             ],
             'course_id' => $courseIdRules,
-            'program_id' => [
-                'nullable',
-                'int',
-                Rule::exists(Program::class, 'id'),
-            ],
             'lattes_url' => 'nullable|string|max:255',
         ];
     }
@@ -325,7 +282,7 @@ class User extends BaseModel implements AuthenticatableContract, AuthorizableCon
     /**
      * Establishes a relationship of belongsToMany with the production model
      *
-     * @return BelongsToMany Relation of belongsToMany user -> production
+     * @return BelongsToMany<User> Relation of belongsToMany user -> production
      */
     public function advisors(): BelongsToMany
     {
@@ -352,85 +309,50 @@ class User extends BaseModel implements AuthenticatableContract, AuthorizableCon
             ->wherePivot('relation_type', UserRelationType::CO_ADVISOR);
     }
 
-    public function saveUsersSubareas($data){
-        foreach($data as $userSubarea){
-            $localUser = User::find($userSubarea['id']);
-            $localUser->subareas()->attach($userSubarea['subarea_id']);
-        }
+    /**
+     * @param 'mestrando'|'doutorando'|'completed'|null $selectedFilter
+     * @return array<string, int>
+     */
+    public static function userCountPerSubArea(?string $selectedFilter): array
+    {
+        // TODO: filter
+        $query = DB::table('users')
+            ->join('areas', 'users.area_id', '=', 'areas.id')
+            ->join('courses', 'users.course_id', '=', 'courses.id')
+            ->groupBy('areas.subarea')
+            ->selectRaw('areas.subarea, COUNT(users.id) AS userCount');
+
+        $query = match ($selectedFilter) {
+            'mestrando' => $query->where('courses.name', '=', 'Mestrado'),
+            'doutorando' => $query->where('courses.name', '=', 'Doutorado'),
+            'completed' => $query->whereNotNull('users.defended_at'),
+            default => $query,
+        };
+
+        return $query->get()->pluck('userCount', 'subarea')->toArray();
     }
 
-    public function subareasMasterFilter(): array
+    /**
+     * @param 'mestrando'|'doutorando'|'completed'|null $selectedFilter
+     * @return array<string, int>
+     */
+    public static function userCountPerArea(?string $selectedFilter): array
     {
-        $data = DB::table('users')
-            ->join('users_subareas', 'users_subareas.users_id', '=', 'users.id')
-            ->join('subareas', 'users_subareas.subareas_id', '=', 'subareas.id')
-            ->select(DB::raw('subareas.subarea_name, count(users_subareas.subareas_id) as subarea_count'))
-            ->where('users.type', '=', UserType::STUDENT)
-            ->where('users.course_id', '=', 1)
-            ->groupBy('subareas.subarea_name')
-            ->get();
+        // TODO: filter
+        $query = DB::table('users')
+            ->join('areas', 'users.area_id', '=', 'areas.id')
+            ->join('courses', 'users.course_id', '=', 'courses.id')
+            ->groupBy('areas.area')
+            ->selectRaw('areas.area, COUNT(users.id) AS userCount');
 
-        $dataSubfields = [];
-        $dataCount = [];
-        for ($counter = 0; $counter < count($data); $counter++) {
-            $dataSubfields[$counter] = $data[$counter]->subarea_name;
-            $dataCount[$counter] = $data[$counter]->subarea_count;
-        }
+        $query = match ($selectedFilter) {
+            'mestrando' => $query->where('courses.name', '=', 'Mestrado'),
+            'doutorando' => $query->where('courses.name', '=', 'Doutorado'),
+            'completed' => $query->whereNotNull('users.defended_at'),
+            default => $query,
+        };
 
-        return [$dataSubfields, $dataCount];
-    }
-
-    public function areasFilter($selectedFilter): array
-    {
-        $course_id = 0;
-        if ($selectedFilter === 'mestrando') {
-            $course_id = 1;
-        } elseif ($selectedFilter === 'doutorando') {
-            $course_id = 2;
-        }
-
-        if($course_id == 0 && $selectedFilter != 'completed'){
-            $data = DB::table('users')
-                ->join('users_subareas', 'users_subareas.users_id', '=', 'users.id')
-                ->join('subareas', 'users_subareas.subareas_id', '=', 'subareas.id')
-                ->join('areas', 'areas.id', '=', 'subareas.area_id')
-                ->select(DB::raw('areas.area_name, count(areas.id) as area_count'))
-                ->where('users.type', '=', UserType::STUDENT)
-                ->groupBy('areas.area_name')
-                ->orderBy('areas.area_name', 'asc')
-                ->get();
-        }elseif($course_id > 0) {
-            $data = DB::table('users')
-                ->join('users_subareas', 'users_subareas.users_id', '=', 'users.id')
-                ->join('subareas', 'users_subareas.subareas_id', '=', 'subareas.id')
-                ->join('areas', 'areas.id', '=', 'subareas.area_id')
-                ->select(DB::raw('areas.area_name, count(areas.id) as area_count'))
-                ->where('users.type', '=', UserType::STUDENT)
-                ->where('users.course_id', '=', $course_id)
-                ->groupBy('areas.area_name')
-                ->orderBy('areas.area_name', 'asc')
-                ->get();
-        }elseif($selectedFilter === 'completed'){
-            $data = DB::table('users')
-                ->join('users_subareas', 'users_subareas.users_id', '=', 'users.id')
-                ->join('subareas', 'users_subareas.subareas_id', '=', 'subareas.id')
-                ->join('areas', 'areas.id', '=', 'subareas.area_id')
-                ->select(DB::raw('areas.area_name, count(areas.id) as area_count'))
-                ->where('users.type', '=', UserType::STUDENT)
-                ->whereNotNull('defended_at')
-                ->groupBy('areas.area_name')
-                ->orderBy('areas.area_name', 'asc')
-                ->get();
-        }
-
-        $dataFields = [];
-        $dataCount = [];
-        for ($counter = 0; $counter < count($data); $counter++) {
-            $dataFields[$counter] = $data[$counter]->area_name;
-            $dataCount[$counter] = $data[$counter]->area_count;
-        }
-
-        return [$dataFields, $dataCount];
+        return $query->get()->pluck('userCount', 'area')->toArray();
     }
 
     public function areasMasterFilter(): array
@@ -671,55 +593,7 @@ class User extends BaseModel implements AuthenticatableContract, AuthorizableCon
 
     public function programs(): BelongsToMany
     {
-        return $this->belongsToMany(Program::class, 'users_programs')
-            ->withPivot(['started_at', 'finished_at']);
-    }
-
-    public function currentProgramsIn(DateTimeInterface $date): BelongsToMany
-    {
-        $belongsToMany = $this->programs();
-
-        return $belongsToMany->whereDate($belongsToMany->qualifyPivotColumn('started_at'), '<=', $date)
-            ->where(function (Builder $builder) use ($date, $belongsToMany) {
-                $builder->whereDate($belongsToMany->qualifyPivotColumn('finished_at'), '>=', $date)
-                    ->orWhereNull($belongsToMany->qualifyPivotColumn('finished_at'))
-                ;
-            })
-        ;
-    }
-
-    /**
-     * @param int $programId
-     * @return Collection<int, Program>
-     */
-    public function productionsByProgram(int $programId): Collection
-    {
-        return $this->writerOf()
-            ->join('users_programs', function (JoinClause $joinClause) use ($programId) {
-                $joinClause->on('users_programs.user_id', '=', 'users_productions.users_id')
-                    ->whereColumn(new Expression('YEAR(users_programs.started_at)'), '<=', 'productions.year',)
-                    ->where(function (JoinClause $builder) {
-                        $builder->whereColumn(new Expression('YEAR(users_programs.finished_at)'), '>=', 'productions.year')
-                            ->orWhereNull('users_programs.finished_at');
-                    })
-                    ->where('users_programs.program_id', $programId)
-                ;
-            })->get();
-    }
-
-    public function currentPrograms(): BelongsToMany
-    {
-        $belongsToMany = $this->programs();
-
-        $belongsToMany->whereDate($belongsToMany->qualifyPivotColumn('started_at'), '<=', Carbon::now())
-            ->where(function (Builder $builder) use ($belongsToMany) {
-                $builder->whereDate($belongsToMany->qualifyPivotColumn('finished_at'), '>=', Carbon::now())
-                    ->orWhereNull($belongsToMany->qualifyPivotColumn('finished_at'))
-                ;
-            })
-        ;
-
-        return $belongsToMany;
+            die("NOT IMPLEMENTED");
     }
 
     public function findUserSubareas($id){

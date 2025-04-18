@@ -34,14 +34,8 @@ class UserController extends BaseApiResourceController
         return (new \App\Models\User)->findUserSubareas($id);
     }
 
-    public function saveUserSubarea(){
-        $data = User::whereNotNull('subarea_id')->get(['id', 'subarea_id']);
-        return (new \App\Models\User)->saveUsersSubareas($data);
-    }
-
     protected function saveSubareas($user, $subareas){
-        foreach($subareas as $subarea)
-            $user->subareas()->sync($subarea);
+            die("NOT IMPLEMENTED");
     }
 
 }
